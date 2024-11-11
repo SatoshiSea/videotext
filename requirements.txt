@@ -1,0 +1,6 @@
+pydub 
+requests 
+elevenlabs
+pyinstaller
+pandas
+vosk
