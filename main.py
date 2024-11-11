@@ -1,13 +1,10 @@
 import re
 import uuid
 import json
-import speech_recognition as sr
 from pydub import AudioSegment
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 import requests
-from google.cloud import speech
-from google.oauth2 import service_account
 import time
 import subprocess
 from pathlib import Path
@@ -180,7 +177,6 @@ def text_to_speech_file(text: str, output_path: Path) -> str:
     return output_path
 
 def transcribe_audio_with_vosk(audio_file, model_path, transcription_file):
-    
     model = Model(str(model_path))
 
     with wave.open(str(audio_file), "rb") as wf:
@@ -206,7 +202,6 @@ def transcribe_audio_with_vosk(audio_file, model_path, transcription_file):
                         "end_time": word["end"]
                     })
 
-
         final_result = json.loads(recognizer.FinalResult())
         for word in final_result.get("result", []):
             words_data.append({
@@ -215,7 +210,7 @@ def transcribe_audio_with_vosk(audio_file, model_path, transcription_file):
                 "end_time": word["end"]
             })
 
-
+    # Agrupar palabras en frases de hasta 8 palabras
     sentences = []
     current_sentence = []
     start_time = None
@@ -226,7 +221,8 @@ def transcribe_audio_with_vosk(audio_file, model_path, transcription_file):
 
         current_sentence.append(word_info["word"])
         
-        if len(current_sentence) == 4 or i == len(words_data) - 1:
+        # Crear una frase en el JSON cada 8 palabras o al llegar al final
+        if len(current_sentence) == 8 or i == len(words_data) - 1:
             end_time = word_info["end_time"]
             sentences.append({
                 "text": " ".join(current_sentence),
@@ -236,6 +232,7 @@ def transcribe_audio_with_vosk(audio_file, model_path, transcription_file):
             current_sentence = []
             start_time = None
 
+    # Guardar la transcripción en el archivo JSON
     transcription_path = transcription_file
     try:
         with transcription_path.open(mode="w") as json_file:
@@ -323,25 +320,23 @@ def create_video_with_ffmpeg(image_folder, voiceover_file, background_file, tran
             start_time = f"{float(sentence_info['start_time']) + text_delay:.2f}"
             end_time = f"{float(sentence_info['end_time']) + text_delay:.2f}"
 
-            text = text.replace("'", "\\'")
-            
             words = text.split()
-            if len(words) > 2:
-                line1 = " ".join(words[:2])
-                line2 = " ".join(words[2:])
+            if len(words) > 4:
+                line1 = " ".join(words[:4])  # Primeras 4 palabras
+                line2 = " ".join(words[4:])  # Resto de las palabras
             else:
                 line1 = text
                 line2 = ""
 
             drawtext_command_line1 = (
                 f"drawtext=fontfile='{font_name}':text='{line1}':"
-                f"fontcolor={font_color}:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2-20:borderw=2:bordercolor={font_border_color}:"
+                f"fontcolor={font_color}:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2-40:borderw=2:bordercolor={font_border_color}:"
                 f"shadowx=2:shadowy=2:shadowcolor=black:enable='between(t\\,{start_time}\\,{end_time})'"
             )
 
             drawtext_command_line2 = (
                 f"drawtext=fontfile='{font_name}':text='{line2}':"
-                f"fontcolor={font_color}:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2+20:borderw=2:bordercolor={font_border_color}:"
+                f"fontcolor={font_color}:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2+40:borderw=2:bordercolor={font_border_color}:"
                 f"shadowx=2:shadowy=2:shadowcolor=black:enable='between(t\\,{start_time}\\,{end_time})'"
             ) if line2 else ""
 
@@ -360,10 +355,9 @@ def create_video_with_ffmpeg(image_folder, voiceover_file, background_file, tran
             subprocess.run(ffmpeg_command, shell=True, check=True)
             
             if temp_input != "temp_video.mp4":
-                Path(temp_input).unlink()
+                Path(temp_input).unlink(missing_ok=True)
 
             temp_input = output_file
-
 
         final_ffmpeg_command = [
             "ffmpeg",
@@ -385,13 +379,19 @@ def create_video_with_ffmpeg(image_folder, voiceover_file, background_file, tran
         
         subprocess.run(final_ffmpeg_command, shell=True, check=True)
 
+        # Eliminar el archivo temporal final si existe
         if Path(temp_input).exists():
-            Path(temp_input).unlink()
-
+            Path(temp_input).unlink(missing_ok=True)
+        
+        # Eliminar los archivos temporales iniciales
+        if Path("temp_video.mp4").exists():
+            Path("temp_video.mp4").unlink(missing_ok=True)
+        
         print(f"Video generado con superposición de texto guardado como {specific_video_file}")
 
     except Exception as e:
         print(f"Error al crear el video: {e}")
+
 
 def process_videos_from_excel(excel_path):
     

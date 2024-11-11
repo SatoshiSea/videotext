@@ -4,3 +4,4 @@ elevenlabs
 pyinstaller
 pandas
 vosk
+openpyxl
